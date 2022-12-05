@@ -1,0 +1,194 @@
+#!/bin/bash
+echo "This is round robin emulator"
+
+outfile=data_out.txt
+rm -f $outfile
+echo "$1 data file entered"
+echo "$1 data file entered" >> $outfile
+#declaring arrays for processes, their arrival times and their nut values
+declare -a processes=()
+declare -i timeValues=()
+declare -i nutValues=()
+declare -a combined_array=()	###combined_array contains all in this
+seconds=0 #variable for storing seconds
+idx=0		#variable
+total_lines=0	#total lines in files
+tlines=0
+zero=0	#variable not to mark it as F
+value=0	#variable for save process
+
+declare -i displayarray=()	#array used for displaying
+
+#read file
+while read -r fileread
+do
+	echo "$fileread"
+	echo "$fileread" >> $outfile
+	for var in $fileread
+	do
+		((idx=idx+1))
+		if [ `expr $idx % 3` -eq 1 ];
+		then
+			#process
+			processes+=($var)
+		elif [ `expr $idx % 3` -eq 2 ];
+		then
+			#time
+			timeValues+=($var)
+		else
+			#nut
+			nutValues+=($var)
+		fi
+	done
+  
+  #save value
+  displayarray+=($value)
+  
+  ((total_lines=total_lines+1))
+  ((value=value+1))
+  
+done < $1
+((tlines=total_lines-1))
+#print ids to file and stdout
+for var in "${processes[@]}"
+do
+	printf "\t%s" "$var"
+	printf "\t%s" "$var" >> $outfile
+done
+
+printf "\n"
+printf "\n" >> $outfile
+
+#loop from start to 50000 as assumed; this is the maximum
+while [ $seconds -le 50000 ]
+do
+	arrayitr=0
+	#show ticks
+	printf "%s" "$seconds"
+	printf "%s" "$seconds" >> $outfile
+	
+	for i in "${timeValues[@]}"
+	do
+		if [ $i -eq $seconds ]; then	#add it as waiting
+			combined_array+=("${processes[$arrayitr]}" "$i" "${nutValues[$arrayitr]}" "W" "${displayarray[$arrayitr]}" "$zero" )	#append it in combined_array
+		fi
+		((arrayitr++))
+	done
+		
+	arrayitr=0
+	for val in "${combined_array[@]}"
+	do
+		if [ `expr $arrayitr % 6` -eq 3 ];
+		then
+			combined_array[$arrayitr]="W"	##save this as W
+		fi			
+		#increment
+		((arrayitr=arrayitr+1))
+	done
+	
+	isNutNull=0	#is nut value greater than zero or not
+	
+	#loop all the processes
+	for n in $(seq 0 1 $tlines)
+	
+	do		
+		itr=0
+		for pr in "${combined_array[@]}"
+		do	
+			#process which is on start should be read as zero
+			if [ $itr -eq 0 ];then
+				nuttemp=${combined_array[2]}
+				if [ $nuttemp -gt 0 ];then		#if nut value of this process is greater than zero
+					combined_array[3]="R"			#R marked
+					let "nuttemp=nuttemp-1"		#decrement nut
+					combined_array[2]=$nuttemp
+					if [ $nuttemp -eq 0 ];then
+						combined_array[5]=1
+					fi
+					isNutNull=1		#nut was greater than 0, no need to check next process
+				fi									
+			fi
+			((itr=itr+1))
+
+		done
+		
+		#adding it to end
+		combined_array+=("${combined_array[0]}" "${combined_array[1]}" "${combined_array[2]}" "${combined_array[3]}" "${combined_array[4]}" "${combined_array[5]}")
+		
+		#delete first 6 indices
+		combined_array=("${combined_array[@]:6}")
+		
+		#update value
+		arrayitr=0
+		
+		for val in "${combined_array[@]}"
+		do
+			if [ `expr $arrayitr % 6` -eq 2 ];	#get nut from combined array
+			then
+				#nut value is zero
+				if [ $val == 0 ];then
+					((readIdx=arrayitr+1))
+					((markF=arrayitr+3))
+					if [ ${combined_array[$markF]} -eq 0 ];then
+						#set to F
+						combined_array[$readIdx]="F"
+					else
+						#set it to R
+						combined_array[$readIdx]="R"
+						combined_array[$markF]=0
+					fi
+				fi
+				
+			fi			
+			((arrayitr=arrayitr+1))
+		done
+		
+		if [ $isNutNull -eq 1 ];then
+			break;		#break this loop iteration
+		fi
+	done
+	
+	isAllCompleted=0		
+
+	#print on stdout and oout file
+	for var in $(seq 0 1 $tlines)
+	do
+		dispitr=0
+		notStarted=0			
+		for var1 in "${combined_array[@]}"
+		do
+		  	if [ `expr $dispitr % 6` -eq 4 ];then	#read 5th value of combined_array 
+				acs=$(expr $var1 % $total_lines)
+		  		if [ $acs == $var ];then
+		  			zero=0
+		  			let "zero=dispitr-1"
+		  			#output stdout
+		  			printf "\t%s" "${combined_array[$zero]}"
+		  			printf "\t%s" "${combined_array[$zero]}" >> $outfile
+		  			notStarted=1
+		  			
+		  			if [ ${combined_array[$zero]} == "F" ];then
+			  			((isAllCompleted=isAllCompleted+1))
+			  			if [ $isAllCompleted -eq $total_lines ];then
+			  				exit
+			  			fi
+		  			fi
+		  		fi
+		  	fi
+			((dispitr=dispitr+1))
+		done
+		
+		if [ $notStarted -eq 0 ];then
+			#process not started
+			printf "\t%s" "-"
+			printf "\t%s" "-" >> $outfile
+		fi
+	done
+		printf "\n"
+		printf "\n" >> $outfile
+		
+		sleep 1
+		
+#loop over seconds
+let "seconds=seconds+1"
+done
